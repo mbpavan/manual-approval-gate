@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/tektoncd/pipeline/pkg/apis/validate"
@@ -139,6 +138,11 @@ func validateGroupName(name string) error {
 	
 	if strings.Contains(name, ":") {
 		return fmt.Errorf("group name cannot contain colons")
+	}
+	
+	// Check for spaces in group name
+	if strings.Contains(name, " ") {
+		return fmt.Errorf("group name cannot contain spaces")
 	}
 	
 	return nil

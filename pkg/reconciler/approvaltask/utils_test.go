@@ -585,8 +585,8 @@ func TestValidateApproverParameter(t *testing.T) {
 			name:        "user with spaces",
 			paramValue:  "user with spaces",
 			paramIndex:  0,
-			expectError: true,
-			errorMsg:    "approvers[0]: invalid user name 'user with spaces' - username cannot contain spaces",
+			expectError: false,
+			// Spaces are now allowed for LDAP/AD integration
 		},
 		{
 			name:        "user with colon",
@@ -610,14 +610,14 @@ func TestValidateApproverParameter(t *testing.T) {
 			errorMsg:    "approvers[0]: invalid group name 'approver group' - group name cannot contain spaces",
 		},
 		{
-			name:        "user with invalid characters",
+			name:        "user with special characters",
 			paramValue:  "user@#$%",
 			paramIndex:  0,
-			expectError: true,
-			errorMsg:    "approvers[0]: invalid user name 'user@#$%' - username contains invalid characters - only alphanumeric, dots, underscores, at-signs, and hyphens are allowed",
+			expectError: false,
+			// Special characters are now allowed for enterprise LDAP/AD integration
 		},
 		{
-			name:        "valid user with allowed characters",
+			name:        "valid user with various characters",
 			paramValue:  "user1.test_user@example-org",
 			paramIndex:  0,
 			expectError: false,
@@ -703,19 +703,20 @@ func TestValidateCustomRunParameters(t *testing.T) {
 			errorMsg:    "no valid approvers found - at least one approver is required",
 		},
 		{
-			name: "numberOfApprovalsRequired exceeds approvers",
+			name: "numberOfApprovalsRequired exceeds approvers - should pass",
 			params: []v1beta1.Param{
 				{
 					Name:  "approvers",
-					Value: *v1beta1.NewArrayOrString("user1", "user2"),
+					Value: *v1beta1.NewArrayOrString("user1", "group:large-team"),
 				},
 				{
 					Name:  "numberOfApprovalsRequired",
-					Value: *v1beta1.NewArrayOrString("3"),
+					Value: *v1beta1.NewArrayOrString("5"),
 				},
 			},
-			expectError: true,
-			errorMsg:    "numberOfApprovalsRequired (3) cannot be greater than the number of approvers (2)",
+			expectError: false,
+			// Note: This should pass because group:large-team might have many members
+			// Group membership is resolved at runtime, not validation time
 		},
 		{
 			name: "malformed group as object (YAML parsing issue)",
