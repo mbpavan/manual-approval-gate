@@ -42,6 +42,202 @@ var (
 	gvk = schema.GroupVersionKind{Group: "tekton.dev", Version: "v1beta1", Kind: "CustomRun"}
 )
 
+// validateApproverParameter validates a single approver string (user or group format).
+func validateApproverParameter(paramValue string, paramIndex int) error {
+	if strings.TrimSpace(paramValue) == "" {
+		return fmt.Errorf("approvers[%d]: empty approver name", paramIndex)
+	}
+
+	// Handle group syntax: "group:groupname"
+	if strings.Contains(paramValue, ":") {
+		return validateGroupSyntax(paramValue, paramIndex)
+	}
+
+	// Handle user syntax: plain username
+	return validateUserSyntax(paramValue, paramIndex)
+}
+
+// validateGroupSyntax validates the "group:groupname" format and ensures proper syntax.
+func validateGroupSyntax(paramValue string, paramIndex int) error {
+	if !strings.HasPrefix(paramValue, groupPrefix) {
+		return fmt.Errorf("approvers[%d]: invalid group format '%s' - use 'group:groupname'", paramIndex, paramValue)
+	}
+	
+	if strings.Contains(paramValue, " :") || strings.Contains(paramValue, ": ") {
+		corrected := strings.ReplaceAll(strings.ReplaceAll(paramValue, " :", ":"), ": ", ":")
+		return fmt.Errorf("approvers[%d]: malformed group name '%s' - use '%s' (no spaces around colon)", paramIndex, paramValue, corrected)
+	}
+	
+	parts := strings.SplitN(paramValue, ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return fmt.Errorf("approvers[%d]: invalid group format '%s' - group name cannot be empty", paramIndex, paramValue)
+	}
+	
+	groupName := parts[1]
+	if err := validateGroupNameFormat(groupName); err != nil {
+		return fmt.Errorf("approvers[%d]: invalid group name '%s' - %s", paramIndex, groupName, err.Error())
+	}
+	
+	return nil
+}
+
+// validateUserSyntax validates a plain username approver.
+func validateUserSyntax(paramValue string, paramIndex int) error {
+	if err := validateUserNameFormat(paramValue); err != nil {
+		return fmt.Errorf("approvers[%d]: invalid username '%s' - %s", paramIndex, paramValue, err.Error())
+	}
+	return nil
+}
+
+// validateUserNameFormat validates username format.
+func validateUserNameFormat(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+	
+	if strings.Contains(name, ":") {
+		return fmt.Errorf("username cannot contain colons - use 'group:groupname' for groups")
+	}
+	
+	return nil
+}
+
+// validateGroupNameFormat validates group name format.
+func validateGroupNameFormat(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("group name cannot be empty")
+	}
+	
+	if strings.Contains(name, ":") {
+		return fmt.Errorf("group name cannot contain colons")
+	}
+	
+	return nil
+}
+
+// ValidateCustomRunParameters validates CustomRun parameters for early error detection.
+func ValidateCustomRunParameters(run *v1beta1.CustomRun) error {
+	var hasApprovers bool
+	var approversCount int
+	var validationErrors []string
+
+	for _, param := range run.Spec.Params {
+		switch param.Name {
+		case allApprovers:
+			hasApprovers = true
+			count, errs := validateApproversParam(param)
+			approversCount = count
+			validationErrors = append(validationErrors, errs...)
+		case approvalsRequired:
+			if err := validateApprovalsRequired(param.Value.StringVal); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("invalid approvers parameter: %s", validationErrors[0])
+	}
+
+	if !hasApprovers {
+		return fmt.Errorf("no 'approvers' parameter found")
+	}
+
+	if approversCount == 0 {
+		return fmt.Errorf("no valid approvers found")
+	}
+
+	return nil
+}
+
+// validateApproversParam validates the approvers parameter and returns count + errors
+func validateApproversParam(param v1beta1.Param) (int, []string) {
+	var validationErrors []string
+	var approversCount int
+
+	// Parse approvers list from different formats
+	approverList := parseApproversList(param, &validationErrors)
+
+	// Validate each approver
+	for i, approver := range approverList {
+		switch val := approver.(type) {
+		case string:
+			if err := validateApproverParameter(val, i); err != nil {
+				validationErrors = append(validationErrors, err.Error())
+			} else {
+				approversCount++
+			}
+		case map[string]interface{}:
+			validateMalformedObjectApprover(val, i, &validationErrors)
+		default:
+			validationErrors = append(validationErrors, fmt.Sprintf("approvers[%d]: invalid approver format - must be a string", i))
+		}
+	}
+
+	return approversCount, validationErrors
+}
+
+// parseApproversList extracts approvers from different parameter formats
+func parseApproversList(param v1beta1.Param, validationErrors *[]string) []interface{} {
+	var approverList []interface{}
+
+	// Handle normal array format (most common case)
+	if len(param.Value.ArrayVal) > 0 {
+		for _, approver := range param.Value.ArrayVal {
+			approverList = append(approverList, approver)
+		}
+		return approverList
+	}
+
+	// Handle JSON string format (only occurs with malformed YAML that creates objects)
+	if param.Value.StringVal != "" {
+		var jsonData interface{}
+		if err := json.Unmarshal([]byte(param.Value.StringVal), &jsonData); err != nil {
+			*validationErrors = append(*validationErrors, fmt.Sprintf("failed to parse JSON '%s' - %v", param.Value.StringVal, err))
+			return approverList
+		}
+		
+		if arr, ok := jsonData.([]interface{}); ok {
+			approverList = arr
+		} else {
+			*validationErrors = append(*validationErrors, "expected an array of approvers")
+		}
+	}
+
+	return approverList
+}
+
+// validateMalformedObjectApprover validates malformed object approvers (from YAML with spaces)
+func validateMalformedObjectApprover(approver map[string]interface{}, index int, validationErrors *[]string) {
+	if groupName, ok := approver["group"]; ok {
+		if groupStr, ok := groupName.(string); ok {
+			*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: malformed group name 'group: %s' - use 'group:%s' (no space)", index, groupStr, groupStr))
+		} else {
+			*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: invalid group specification", index))
+		}
+	} else {
+		*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: invalid approver format - must be a string", index))
+	}
+}
+
+// validateApprovalsRequired validates the numberOfApprovalsRequired parameter value.
+func validateApprovalsRequired(value string) error {
+	approvals, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid numberOfApprovalsRequired parameter: '%s' is not a valid integer", value)
+	}
+	if approvals <= 0 {
+		return fmt.Errorf("invalid numberOfApprovalsRequired parameter: must be greater than 0, got %d", approvals)
+	}
+	return nil
+}
+
+
+
+
+
+
+
 func checkCustomRunReferencesApprovalTask(run *v1beta1.CustomRun) error {
 	var apiVersion, kind string
 	if run.Spec.CustomRef != nil {
