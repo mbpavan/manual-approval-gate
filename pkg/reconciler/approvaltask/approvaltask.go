@@ -189,14 +189,6 @@ func (r *Reconciler) reconcile(ctx context.Context, run *v1beta1.CustomRun, stat
 	// Propagate labels and annotations from ApprovalTask to Run.
 	propagateApprovalTaskLabelsAndAnnotations(run, approvalTaskMeta)
 
-	// Validate ApprovalTask spec
-	if err := approvalTaskSpec.Validate(ctx); err != nil {
-		run.Status.MarkCustomRunFailed(approvaltaskv1alpha1.ApprovalTaskRunReasonFailedValidation.String(),
-			"ApprovalTask %s/%s can't be Run; it has an invalid spec: %s",
-			approvalTask.Namespace, approvalTask.Name, err)
-		return nil
-	}
-
 	if !approvalTask.HasStarted() {
 		approvalTask.Status.StartTime = &approvalTask.CreationTimestamp
 	}

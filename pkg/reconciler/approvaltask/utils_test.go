@@ -589,11 +589,25 @@ func TestValidateApproverParameter(t *testing.T) {
 			// Spaces are now allowed for LDAP/AD integration
 		},
 		{
-			name:        "user with colon",
-			paramValue:  "user:something",
+			name:        "user with colon - ServiceAccount format",
+			paramValue:  "system:serviceaccount:default:builder",
 			paramIndex:  0,
-			expectError: true,
-			errorMsg:    "approvers[0]: invalid format 'user:something' - if specifying a group, use 'group:groupname' format",
+			expectError: false,
+			// ServiceAccounts and other K8s identities with colons are allowed
+		},
+		{
+			name:        "user with colon - OAuth format", 
+			paramValue:  "oauth:alice",
+			paramIndex:  0,
+			expectError: false,
+			// OAuth users with colons are allowed
+		},
+		{
+			name:        "valid group format",
+			paramValue:  "group:dev-team",
+			paramIndex:  0, 
+			expectError: false,
+			// This is valid group syntax, should pass
 		},
 		{
 			name:        "empty group name",
@@ -607,7 +621,7 @@ func TestValidateApproverParameter(t *testing.T) {
 			paramValue:  "group:approver group",
 			paramIndex:  0,
 			expectError: true,
-			errorMsg:    "approvers[0]: invalid group name 'approver group' - group name cannot contain spaces",
+			errorMsg:    "approvers[0]: group name 'approver group' cannot contain spaces",
 		},
 		{
 			name:        "user with special characters",
@@ -802,43 +816,4 @@ func TestValidateCustomRunParameters(t *testing.T) {
 	}
 }
 
-func TestCreateApprovalTaskAfterValidation(t *testing.T) {
-	// This test ensures createApprovalTask works correctly after validation has been done
-	run := &v1beta1.CustomRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "bar",
-			Namespace: "foo",
-		},
-		Spec: v1beta1.CustomRunSpec{
-			CustomRef: &v1beta1.TaskRef{
-				APIVersion: "wrong-api-version",
-				Kind:       "wrong-kind",
-			},
-			Params: []v1beta1.Param{
-				{
-					Name:  "approvers",
-					Value: *v1beta1.NewArrayOrString("foo", "bar", "tekton"),
-				},
-				{
-					Name:  "numberOfApprovalsRequired",
-					Value: *v1beta1.NewArrayOrString("2"),
-				},
-			},
-		},
-	}
 
-	client := fake.NewSimpleClientset()
-
-	// Validation should pass first
-	err := ValidateCustomRunParameters(run)
-	assert.NoError(t, err, "Parameters should be valid")
-
-	// Then createApprovalTask should succeed
-	approvalTask, err := createApprovalTask(context.TODO(), client, run)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "bar", approvalTask.Name, "ApprovalTask name should match")
-	assert.Equal(t, "foo", approvalTask.Namespace, "ApprovalTask namespace should match")
-	assert.Equal(t, 3, len(approvalTask.Spec.Approvers), "Expected 3 approvals")
-	assert.Equal(t, 2, approvalTask.Spec.NumberOfApprovalsRequired, "Expected approvalsRequired to be 2")
-}

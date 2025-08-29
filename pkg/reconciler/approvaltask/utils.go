@@ -48,35 +48,36 @@ func validateApproverParameter(paramValue string, paramIndex int) error {
 		return fmt.Errorf("approvers[%d]: approver name cannot be empty", paramIndex)
 	}
 
-	// Handle group syntax: "group:groupname"
-	if strings.Contains(paramValue, ":") {
+	// Check for malformed group syntax
+	if strings.Contains(paramValue, " :") || strings.Contains(paramValue, ": ") {
+		return fmt.Errorf("approvers[%d]: invalid format '%s' - remove spaces around colon, use 'group:groupname' format", paramIndex, paramValue)
+	}
+
+	// Handle explicit group syntax: "group:groupname"
+	if strings.HasPrefix(paramValue, "group:") {
 		return validateGroupSyntax(paramValue, paramIndex)
 	}
 
-	// Handle user syntax: plain username
 	return validateUserSyntax(paramValue, paramIndex)
 }
 
 // validateGroupSyntax validates the "group:groupname" format and ensures proper syntax.
 func validateGroupSyntax(paramValue string, paramIndex int) error {
-	// Check for spaces around colon first (common formatting mistake)
-	if strings.Contains(paramValue, " :") || strings.Contains(paramValue, ": ") {
-		return fmt.Errorf("approvers[%d]: invalid format '%s' - remove spaces around colon, use 'group:groupname' format", paramIndex, paramValue)
-	}
-	
-	// Check for non-group format with colon (user:something)
-	if !strings.HasPrefix(paramValue, "group:") {
-		return fmt.Errorf("approvers[%d]: invalid format '%s' - if specifying a group, use 'group:groupname' format", paramIndex, paramValue)
-	}
-	
 	parts := strings.SplitN(paramValue, ":", 2)
 	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
 		return fmt.Errorf("approvers[%d]: invalid group format '%s' - group name cannot be empty after 'group:'", paramIndex, paramValue)
 	}
 	
 	groupName := parts[1]
-	if err := validateGroupNameFormat(groupName); err != nil {
-		return fmt.Errorf("approvers[%d]: invalid group name '%s' - %s", paramIndex, groupName, err.Error())
+	// Validate group name format inline
+	if strings.TrimSpace(groupName) == "" {
+		return fmt.Errorf("approvers[%d]: group name cannot be empty", paramIndex)
+	}
+	if strings.Contains(groupName, ":") {
+		return fmt.Errorf("approvers[%d]: group name '%s' cannot contain colons", paramIndex, groupName)
+	}
+	if strings.Contains(groupName, " ") {
+		return fmt.Errorf("approvers[%d]: group name '%s' cannot contain spaces", paramIndex, groupName)
 	}
 	
 	return nil
@@ -84,38 +85,9 @@ func validateGroupSyntax(paramValue string, paramIndex int) error {
 
 // validateUserSyntax validates a plain username approver.
 func validateUserSyntax(paramValue string, paramIndex int) error {
-	if err := validateUserNameFormat(paramValue); err != nil {
-		return fmt.Errorf("approvers[%d]: invalid user name '%s' - %s", paramIndex, paramValue, err.Error())
-	}
-	return nil
-}
-
-// validateUserNameFormat validates username format.
-func validateUserNameFormat(name string) error {
-	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("username cannot be empty")
-	}
-	
-	if strings.Contains(name, ":") {
-		return fmt.Errorf("username cannot contain colons - use 'group:groupname' for groups")
-	}
-	
-	return nil
-}
-
-// validateGroupNameFormat validates group name format.
-func validateGroupNameFormat(name string) error {
-	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("group name cannot be empty")
-	}
-	
-	if strings.Contains(name, ":") {
-		return fmt.Errorf("group name cannot contain colons")
-	}
-	
-	// Check for spaces in group name
-	if strings.Contains(name, " ") {
-		return fmt.Errorf("group name cannot contain spaces")
+	// Validate user name format inline
+	if strings.TrimSpace(paramValue) == "" {
+		return fmt.Errorf("approvers[%d]: username cannot be empty", paramIndex)
 	}
 	
 	return nil
@@ -153,12 +125,6 @@ func ValidateCustomRunParameters(run *v1beta1.CustomRun) error {
 		return fmt.Errorf("no valid approvers found - at least one approver is required")
 	}
 
-	// Note: We don't validate numberOfApprovalsRequired vs approversCount here because:
-	// 1. Groups can have multiple members (unknown at validation time)
-	// 2. Group membership is resolved at runtime, not validation time
-	// 3. A single group entry might represent many actual approvers
-	// This validation is intentionally skipped (consistent with ApprovalTaskSpec validation)
-
 	return nil
 }
 
@@ -193,14 +159,12 @@ func validateApproversParam(param v1beta1.Param) (int, []string) {
 func parseApproversList(param v1beta1.Param, validationErrors *[]string) []interface{} {
 	var approverList []interface{}
 
-	// Handle normal array format (most common case)
 	if len(param.Value.ArrayVal) > 0 {
 		for _, approver := range param.Value.ArrayVal {
 			approverList = append(approverList, approver)
 		}
 	}
 
-	// Handle ObjectVal (malformed YAML that creates objects) - should be processed even if ArrayVal exists
 	if len(param.Value.ObjectVal) > 0 {
 		// Convert map[string]string to map[string]interface{} for proper handling
 		objectVal := make(map[string]interface{})
@@ -210,7 +174,6 @@ func parseApproversList(param v1beta1.Param, validationErrors *[]string) []inter
 		approverList = append(approverList, objectVal)
 	}
 
-	// Handle JSON string format (only occurs with malformed YAML that creates objects)
 	if param.Value.StringVal != "" && len(approverList) == 0 {
 		var jsonData interface{}
 		if err := json.Unmarshal([]byte(param.Value.StringVal), &jsonData); err != nil {
@@ -256,12 +219,6 @@ func validateApprovalsRequired(value string) error {
 	}
 	return nil
 }
-
-
-
-
-
-
 
 func checkCustomRunReferencesApprovalTask(run *v1beta1.CustomRun) error {
 	var apiVersion, kind string
