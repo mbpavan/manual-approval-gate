@@ -120,18 +120,18 @@ func (c *Reconciler) ReconcileKind(ctx context.Context, run *v1beta1.CustomRun) 
 
 	// Validate parameters early for fail-fast behavior
 	if err := ValidateCustomRunParameters(run); err != nil {
-		// Use a more descriptive message that will show up in PipelineRun
-		errorMsg := fmt.Sprintf("ApprovalTask validation failed: %s", err.Error())
+		// Use a user-friendly message that will show up in PipelineRun
+		userMsg := fmt.Sprintf("ApprovalTask validation failed. Please check CustomRun '%s' for detailed error information", run.Name)
 		run.Status.MarkCustomRunFailed(approvaltaskv1alpha1.ApprovalTaskRunReasonFailedValidation.String(),
-			errorMsg)
+			fmt.Sprintf("ApprovalTask validation failed: %s", err.Error()))
 		logger.Errorf("Parameter validation failed for Run %s/%s: %v", run.Namespace, run.Name, err)
 		
 		// Also emit an event that will be visible in PipelineRun events
 		events.Emit(ctx, nil, &apis.Condition{
 			Type:    apis.ConditionSucceeded,
 			Status:  "False",
-			Reason:  "ValidationFailed", 
-			Message: errorMsg,
+			Reason:  approvaltaskv1alpha1.ApprovalTaskRunReasonFailedValidation.String(), 
+			Message: userMsg,
 		}, run)
 		return nil
 	}
