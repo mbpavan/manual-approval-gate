@@ -99,25 +99,23 @@ func (r *reconciler) Admit(ctx context.Context, request *admissionv1.AdmissionRe
 		logger.Error("Unhandled kind: ", gvk)
 	}
 
-	// Decode new object (common for both CREATE and UPDATE)
+	// Decode new object 
 	newObj, err := r.decodeNewObject(newBytes)
 	if err != nil {
 		return webhook.MakeErrorStatus("cannot decode incoming new object: %v", err)
 	}
 
-	// Validate structural requirements (common for both CREATE and UPDATE)
+	// Validate structural requirements 
 	if err := validateApprovalTask(newObj, ctx); err != nil {
 		return webhook.MakeErrorStatus("validation failed: %v", err)
 	}
 
-	// Handle CREATE operations
 	if request.Operation == "CREATE" {
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
 		}
 	}
 
-	// Handle UPDATE operations - additional business logic validation
 	if request.Operation != "UPDATE" {
 		return webhook.MakeErrorStatus("unsupported operation: %s", request.Operation)
 	}
@@ -488,7 +486,7 @@ func CheckOtherUsersForInvalidChanges(oldObjApprovers, newObjApprover []v1alpha1
 	return true
 }
 
-// validateApprovalTask validates the complete ApprovalTask resource (structural validation for both CREATE and UPDATE)
+// validateApprovalTask validates the complete ApprovalTask resource 
 func validateApprovalTask(approvalTask *v1alpha1.ApprovalTask, ctx context.Context) error {
 	// Validate spec
 	if err := validateApprovalTaskSpec(&approvalTask.Spec, ctx); err != nil {
@@ -539,15 +537,10 @@ func validateApprovalTaskSpec(spec *v1alpha1.ApprovalTaskSpec, ctx context.Conte
 		approverNames[approverKey] = i
 	}
 
-	// Note: We don't validate numberOfApprovalsRequired vs approver count because:
-	// 1. Groups can have multiple members (unknown at validation time)  
-	// 2. Group membership is resolved at runtime, not validation time
-	// 3. If there aren't enough approvers at runtime, the task stays "pending" (correct behavior)
-
 	return nil
 }
 
-// validateApprover validates a single approver entry following Kubernetes validation patterns.
+// validateApprover validates a single approver entry
 func validateApprover(approver v1alpha1.ApproverDetails, fieldPath string) error {
 	// Validate approver type first to determine validation rules
 	approverType := v1alpha1.DefaultedApproverType(approver.Type)
@@ -606,7 +599,7 @@ func validateApprover(approver v1alpha1.ApproverDetails, fieldPath string) error
 	return nil
 }
 
-// validateNameFormat performs common name validation checks following Kubernetes best practices.
+// validateNameFormat performs common name validation checks
 func validateNameFormat(name, fieldType string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("%s cannot be empty", fieldType)
@@ -620,18 +613,13 @@ func validateNameFormat(name, fieldType string) error {
 	return nil
 }
 
-// validateUserName validates username format following Kubernetes/OpenShift identity patterns.
+// validateUserName validates username
 func validateUserName(name string) error {
 	// Basic empty check (spaces ARE allowed in usernames for LDAP integration)
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("username cannot be empty")
 	}
 	
-	// Kubernetes/OpenShift identity patterns - colons AND spaces are allowed:
-	// - ServiceAccounts: system:serviceaccount:namespace:name
-	// - OAuth users: oauth:username  
-	// - LDAP users: user@domain.com, "John Doe"
-	// Only restrict group prefix format to avoid confusion
 	if strings.HasPrefix(name, "group:") {
 		return fmt.Errorf("username cannot start with 'group:' prefix - use type: Group for group approvers")
 	}
@@ -639,7 +627,7 @@ func validateUserName(name string) error {
 	return nil
 }
 
-// validateGroupName validates group name format following Kubernetes naming conventions.
+// validateGroupName validates group name format
 func validateGroupName(name string) error {
 	if err := validateNameFormat(name, "group name"); err != nil {
 		return err
@@ -653,7 +641,7 @@ func validateGroupName(name string) error {
 	return nil
 }
 
-// webhookContains checks if a slice contains a string (renamed to avoid conflict)
+// webhookContains checks if a slice contains a string
 func webhookContains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {
@@ -663,7 +651,7 @@ func webhookContains(slice []string, item string) bool {
 	return false
 }
 
-// decodeNewObject decodes the incoming new object (common helper for CREATE and UPDATE)
+// decodeNewObject decodes the incoming new object
 func (r *reconciler) decodeNewObject(newBytes []byte) (*v1alpha1.ApprovalTask, error) {
 	var newObj v1alpha1.ApprovalTask
 	if len(newBytes) != 0 {
@@ -678,7 +666,7 @@ func (r *reconciler) decodeNewObject(newBytes []byte) (*v1alpha1.ApprovalTask, e
 	return &newObj, nil
 }
 
-// decodeOldObject decodes the incoming old object (helper for UPDATE operations)
+// decodeOldObject decodes the incoming old object
 func (r *reconciler) decodeOldObject(oldBytes []byte) (*v1alpha1.ApprovalTask, error) {
 	var oldObj v1alpha1.ApprovalTask
 	if len(oldBytes) != 0 {
