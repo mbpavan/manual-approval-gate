@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	admissionlisters "k8s.io/client-go/listers/admissionregistration/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -489,56 +488,8 @@ func CheckOtherUsersForInvalidChanges(oldObjApprovers, newObjApprover []v1alpha1
 	return true
 }
 
-// validateObjectMetadata validates Kubernetes ObjectMeta using standard validation rules
-func validateObjectMetadata(meta metav1.Object) error {
-	// Validate name
-	if meta.GetName() == "" {
-		return fmt.Errorf("metadata.name: required field is missing")
-	}
-	
-	// Use standard Kubernetes DNS-1123 validation for resource names
-	if errs := validation.IsDNS1123Subdomain(meta.GetName()); len(errs) > 0 {
-		return fmt.Errorf("metadata.name: invalid value '%s': %s", meta.GetName(), strings.Join(errs, ", "))
-	}
-	
-	// Validate namespace if present
-	if ns := meta.GetNamespace(); ns != "" {
-		if errs := validation.IsDNS1123Label(ns); len(errs) > 0 {
-			return fmt.Errorf("metadata.namespace: invalid value '%s': %s", ns, strings.Join(errs, ", "))
-		}
-	}
-	
-	// Validate labels
-	for key, value := range meta.GetLabels() {
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return fmt.Errorf("metadata.labels: invalid key '%s': %s", key, strings.Join(errs, ", "))
-		}
-		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
-			return fmt.Errorf("metadata.labels['%s']: invalid value '%s': %s", key, value, strings.Join(errs, ", "))
-		}
-	}
-	
-	// Validate annotations
-	for key, value := range meta.GetAnnotations() {
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return fmt.Errorf("metadata.annotations: invalid key '%s': %s", key, strings.Join(errs, ", "))
-		}
-		// Annotations have less restrictive value validation than labels
-		if len(value) > validation.DNS1123SubdomainMaxLength {
-			return fmt.Errorf("metadata.annotations['%s']: value too long (maximum %d characters)", key, validation.DNS1123SubdomainMaxLength)
-		}
-	}
-	
-	return nil
-}
-
 // validateApprovalTask validates the complete ApprovalTask resource (structural validation for both CREATE and UPDATE)
 func validateApprovalTask(approvalTask *v1alpha1.ApprovalTask, ctx context.Context) error {
-	// Validate metadata using standard Kubernetes validation
-	if err := validateObjectMetadata(approvalTask.GetObjectMeta()); err != nil {
-		return fmt.Errorf("metadata validation failed: %w", err)
-	}
-	
 	// Validate spec
 	if err := validateApprovalTaskSpec(&approvalTask.Spec, ctx); err != nil {
 		return fmt.Errorf("spec validation failed: %w", err)
