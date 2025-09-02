@@ -558,14 +558,14 @@ func TestValidateApproverParameter(t *testing.T) {
 			paramValue:  "group: approver-group3",
 			paramIndex:  2,
 			expectError: true,
-			errorMsg:    "approvers[2]: invalid format 'group: approver-group3' - remove spaces around colon, use 'group:groupname' format",
+			errorMsg:    "approvers[2]: invalid group format 'group: approver-group3' - use 'group:groupname' format (remove spaces around colon)",
 		},
 		{
 			name:        "invalid group with space before colon",
 			paramValue:  "group :approver-group3",
 			paramIndex:  1,
 			expectError: true,
-			errorMsg:    "approvers[1]: invalid format 'group :approver-group3' - remove spaces around colon, use 'group:groupname' format",
+			errorMsg:    "approvers[1]: invalid group format 'group :approver-group3' - use 'group:groupname' format (remove spaces around colon)",
 		},
 		{
 			name:        "empty approver",
@@ -673,7 +673,7 @@ func TestValidateCustomRunParameters(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "invalid approvers parameter: approvers[1]: invalid format 'group: approver-group3' - remove spaces around colon, use 'group:groupname' format",
+			errorMsg:    "invalid approvers parameter: approvers[1]: invalid group format 'group: approver-group3' - use 'group:groupname' format (remove spaces around colon)",
 		},
 		{
 			name: "invalid numberOfApprovalsRequired not a number",
@@ -751,7 +751,7 @@ func TestValidateCustomRunParameters(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "invalid approvers parameter: approvers[3]: malformed group specification {\"group\":\"example\"} - use string format 'group:example' instead",
+			errorMsg:    "invalid approvers parameter: approvers[3]: invalid group format {\"group\":\"example\"} - use 'group:example' format instead",
 		},
 		{
 			name: "other object format",

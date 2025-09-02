@@ -50,7 +50,7 @@ func validateApproverParameter(paramValue string, paramIndex int) error {
 
 	// Check for malformed group syntax
 	if strings.Contains(paramValue, " :") || strings.Contains(paramValue, ": ") {
-		return fmt.Errorf("approvers[%d]: invalid format '%s' - remove spaces around colon, use 'group:groupname' format", paramIndex, paramValue)
+					return fmt.Errorf("approvers[%d]: invalid group format '%s' - use 'group:groupname' format (remove spaces around colon)", paramIndex, paramValue)
 	}
 
 	// Handle explicit group syntax: "group:groupname"
@@ -197,7 +197,7 @@ func validateMalformedObjectApprover(approver map[string]interface{}, index int,
 		if groupStr, ok := groupName.(string); ok {
 			// Format the object as JSON for clear error message
 			objJSON := fmt.Sprintf(`{"group":"%s"}`, groupStr)
-			*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: malformed group specification %s - use string format 'group:%s' instead", index, objJSON, groupStr))
+			*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: invalid group format %s - use 'group:%s' format instead", index, objJSON, groupStr))
 		} else {
 			*validationErrors = append(*validationErrors, fmt.Sprintf("approvers[%d]: invalid group specification", index))
 		}

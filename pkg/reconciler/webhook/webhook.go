@@ -111,6 +111,10 @@ func (r *reconciler) Admit(ctx context.Context, request *admissionv1.AdmissionRe
 	}
 
 	if request.Operation == "CREATE" {
+		// For CREATE operations, ensure all approver inputs are set to "pending"
+		if err := validateApproverInputsForCreate(newObj); err != nil {
+			return webhook.MakeErrorStatus("validation failed: %v", err)
+		}
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
 		}
@@ -502,22 +506,10 @@ func validateApprovalTaskSpec(spec *v1alpha1.ApprovalTaskSpec, ctx context.Conte
 	if spec.NumberOfApprovalsRequired <= 0 {
 		return fmt.Errorf("numberOfApprovalsRequired: must be greater than 0, got %d", spec.NumberOfApprovalsRequired)
 	}
-	
-	// Set reasonable upper bound to prevent resource exhaustion
-	const maxApprovals = 1000
-	if spec.NumberOfApprovalsRequired > maxApprovals {
-		return fmt.Errorf("numberOfApprovalsRequired: must be less than or equal to %d, got %d", maxApprovals, spec.NumberOfApprovalsRequired)
-	}
 
 	// Validate approvers list
 	if len(spec.Approvers) == 0 {
 		return fmt.Errorf("approvers: required field is missing")
-	}
-	
-	// Set reasonable upper bound for approvers list to prevent resource exhaustion
-	const maxApprovers = 1000
-	if len(spec.Approvers) > maxApprovers {
-		return fmt.Errorf("approvers: list too large (maximum %d approvers allowed), got %d", maxApprovers, len(spec.Approvers))
 	}
 
 	// Validate each approver and check for duplicates
@@ -567,11 +559,6 @@ func validateApprover(approver v1alpha1.ApproverDetails, fieldPath string) error
 
 	// Validate users for group type
 	if approverType == "Group" {
-		// Set reasonable upper bound for group users to prevent resource exhaustion
-		const maxGroupUsers = 100
-		if len(approver.Users) > maxGroupUsers {
-			return fmt.Errorf("%s.users: list too large (maximum %d users per group allowed), got %d", fieldPath, maxGroupUsers, len(approver.Users))
-		}
 		
 		// Track duplicate users within the group
 		groupUsers := make(map[string]int) // username -> index
@@ -679,4 +666,23 @@ func (r *reconciler) decodeOldObject(oldBytes []byte) (*v1alpha1.ApprovalTask, e
 		}
 	}
 	return &oldObj, nil
+}
+
+// validateApproverInputsForCreate ensures all approver inputs are set to "pending" for new ApprovalTask resources
+func validateApproverInputsForCreate(approvalTask *v1alpha1.ApprovalTask) error {
+	for i, approver := range approvalTask.Spec.Approvers {
+		if approver.Input != "pending" {
+			return fmt.Errorf("approvers[%d].input: must be 'pending' for new ApprovalTask, got '%s'", i, approver.Input)
+		}
+		
+		// For group approvers, also validate that all users within the group have pending input
+		if v1alpha1.DefaultedApproverType(approver.Type) == "Group" {
+			for j, user := range approver.Users {
+				if user.Input != "pending" {
+					return fmt.Errorf("approvers[%d].users[%d].input: must be 'pending' for new ApprovalTask, got '%s'", i, j, user.Input)
+				}
+			}
+		}
+	}
+	return nil
 }
